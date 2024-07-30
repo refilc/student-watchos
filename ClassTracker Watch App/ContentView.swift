@@ -36,7 +36,7 @@ func hmsOnly(time : Date) -> DateComponents {
 
 // Gyakran használt dateformatter ami átalakít sima stringet egy dátummá
 // ami 2001.01.01 napon a megadott órában és percben aktualizált
-func dateConvert(timeString : String) -> Date? {
+func dateify(timeString : String) -> Date? {
     let dateFormatter = DateFormatter()
     dateFormatter.dateFormat = "HH:mm"
     return dateFormatter.date(from: timeString)
@@ -54,11 +54,11 @@ struct Lesson : Identifiable{
     
     // Az alábbi kettő funkció átalakítja a stringeket dátummá, ha kell
     func startDate() -> Date? {
-        return dateConvert(timeString: start)
+        return dateify(timeString: start)
     }
     
     func endDate() -> Date? {
-        return dateConvert(timeString: end)
+        return dateify(timeString: end)
     }
 }
 
@@ -68,7 +68,7 @@ struct LessonView : View {
     // Ez adja meg hogy ez egy jelenlegi óra e vagy sem, a színezéshez van felhasználva
     var ongoing : Bool {
         let currentTime = hmsOnly(time:Date())
-        if let currentDate = dateConvert(timeString: ("\(currentTime.hour ?? 26):\(currentTime.minute ?? 62)")){
+        if let currentDate = dateify(timeString: ("\(currentTime.hour ?? 0):\(currentTime.minute ?? 0)")){
             return isBetween(dis: lesson.startDate(), und: currentDate, dat: lesson.endDate())
         }
         return false
@@ -120,15 +120,14 @@ struct currLesson : View{
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.065) {
             updateClassInfo()
             
-            let placeHolderTime = getlesson().end
-            let leftofLesson : Int = hournmin(time: placeHolderTime, minSec: false) ?? -1
-            
-            switch(leftofLesson){
+            let endofLesson = getlesson().end
+            let secondsLeft : Int = hournmin(time: endofLesson, minSec: true) ?? -1
+            let minutesLeft = (secondsLeft/60)
+
+            switch(minutesLeft){
                 case ...0:
-                    let leftSecs = (hournmin(time:placeHolderTime, minSec: true) ?? 0)
-                    
-                    if(leftSecs >= 0){
-                        timeLeft = "\(leftSecs) m"
+                    if(secondsLeft >= 0){
+                        timeLeft = "\(secondsLeft) m"
                         
                         if(self.glowDir){
                             barRadius-=1
@@ -143,7 +142,7 @@ struct currLesson : View{
                             }
                         }
                         
-                    self.progress = Double(leftSecs)/60.0
+                    self.progress = (Double(secondsLeft) / 60)
                 }
                 else{
                     self.progress = 0
@@ -151,19 +150,19 @@ struct currLesson : View{
                 }
                 break
                 
-                case 1...44:
-                    timeLeft = String(leftofLesson+1)
-                    self.progress = 1 - (Double(leftofLesson) / 45.0)
+                case 1...45:
+                    timeLeft = String(minutesLeft+1)
+                    self.progress = 1 - (Double(minutesLeft) / 45.0)
                     barRadius = 5
                 break
                 
-                case 45...:
+                case 46...:
                     timeLeft = ">45"
                     self.progress = 1
                 break
                 
                 default:
-                    timeLeft = "-"
+                    timeLeft = "?"
                     barRadius = 5
                     break
             }
@@ -175,7 +174,8 @@ struct currLesson : View{
     func getlesson() -> Lesson{
         
         let currentTime = hmsOnly(time: Date())
-        guard let convertedDate = dateConvert(timeString: "\(currentTime.hour!):\(currentTime.minute!)") else {
+        guard let convertedDate = dateify(timeString: "\(currentTime.hour!):\(currentTime.minute!)") 
+        else {
             return Lesson(name: "Error", classroom: "Error", classIcon: "error", start: "0:00", end: "0:00")
         }
         
@@ -190,7 +190,9 @@ struct currLesson : View{
         // közt vagyunk e szendvicselve (metafórikusan)
         for (_, lesson) in lessons.enumerated() {
             if convertedDate < lesson.startDate() ?? Date() {
-                return Lesson(name: "Szünet", classroom: lesson.classroom, classIcon: lesson.classIcon, start: lesson.start, end: lesson.end)
+                let classIndex = lessons.firstIndex(where: {$0.end == lesson.end} ) ?? 0
+                
+                return Lesson(name: "Szünet", classroom: lesson.classroom, classIcon: lesson.classIcon, start: lessons[classIndex-1].end, end: lesson.start)
             }
         }
         
@@ -200,7 +202,7 @@ struct currLesson : View{
     }
     
         @State var classIndex: Int = -69
-        @State var noClassesLeft: Bool = true
+        @State var noClassesLeft: Bool = false
             
             var body: some View {
                 VStack {
@@ -239,13 +241,31 @@ struct currLesson : View{
     }
     
     // Frissíti az infót a jelenlegi óráról mert makacs a swift
+    // A funkció kicsit nehezen olvasható és undorítóan néz ki ngl, ezt egyszer újra kell írni
     private func updateClassInfo() {
-        if let index = lessons.firstIndex(where: { $0.id == getlesson().id }) {
-            classIndex = index
-            noClassesLeft = false
-        } else {
-            classIndex = -69
+        let supposedLesson = getlesson()
+        // Megkeres egy olyan órát aminek a unique IDje stimmel a mienkkel
+        let index = lessons.firstIndex(where: { $0.id == supposedLesson.id })
+        let foundIndex = (index != nil)
+        
+        // A szünet is egy óraként van returnölve, és az eleje a szünet elejéhez és végéhez van kötve,
+        // emiatt egy olyan órát keresünk aminek az eleje stimmel a szünet végével
+        let breakIndex = lessons.firstIndex(where: { $0.start == supposedLesson.end })
+        let foundBreakIndex = (breakIndex != nil)
+        
+        if (foundIndex) {
+            classIndex = index!
+        } else if (foundBreakIndex){
+            if(supposedLesson.name == "Szünet")
+            {
+                classIndex = breakIndex!
+                noClassesLeft = false
+            }
+        }
+        else{
+            // Ennek csak akkor kéne előfordulnia ha nincsenek órák aznap vagy haza lehet menni
             noClassesLeft = true
+            classIndex = -69
         }
     }
 }
@@ -268,8 +288,8 @@ struct ContentView: View {
         Lesson(name:"Töri", classroom : "D114", classIcon: "book.fill", start: "9:55", end: "10:40"),
         Lesson(name:"Matek", classroom : "A200", classIcon: "plus.forwardslash.minus", start: "10:50", end: "11:35"),
         Lesson(name:"Angol", classroom : "B104", classIcon: "flag.fill", start: "11:45", end: "12:30"),
-        Lesson(name:"Földrajz", classroom : "A06", classIcon: "map.fill", start: "12:55", end: "13:40"),
-        Lesson(name:"Swift", classroom : "D104", classIcon: "swift", start: "13:50", end: "14:35"),
+        Lesson(name:"Földrajz", classroom : "A06", classIcon: "map.fill", start: "18:55", end: "19:20"),
+        Lesson(name:"Swift", classroom : "D104", classIcon: "swift", start: "21:00", end: "21:35"),
     ]
     
     
@@ -286,6 +306,14 @@ struct ContentView: View {
         }.tabViewStyle(.carousel)
         
     }
+}
+
+extension Date {
+
+    static func - (lhs: Date, rhs: Date) -> TimeInterval {
+        return lhs.timeIntervalSinceReferenceDate - rhs.timeIntervalSinceReferenceDate
+    }
+
 }
 
 #Preview {
