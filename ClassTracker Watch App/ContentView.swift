@@ -53,12 +53,12 @@ struct Lesson : Identifiable{
     let end : String
     
     // Az alábbi kettő funkció átalakítja a stringeket dátummá, ha kell
-    func startDate() -> Date? {
-        return dateify(timeString: start)
+    func startDate() -> Date {
+        return dateify(timeString: start) ?? Date()
     }
     
-    func endDate() -> Date? {
-        return dateify(timeString: end)
+    func endDate() -> Date {
+        return dateify(timeString: end) ?? Date()
     }
 }
 
@@ -120,10 +120,16 @@ struct currLesson : View{
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.065) {
             updateClassInfo()
             
-            let endofLesson = getlesson().end
+            let currentLesson = getlesson()
+            let endofLesson = currentLesson.end
+            
             let secondsLeft : Int = hournmin(time: endofLesson, minSec: true) ?? -1
             let minutesLeft = (secondsLeft/60)
-
+            
+            
+            let currentTime = hmsOnly(time: Date())
+            let convertedDate = dateify(timeString: "\(currentTime.hour!):\(currentTime.minute!)")
+            
             switch(minutesLeft){
                 case ...0:
                     if(secondsLeft >= 0){
@@ -142,7 +148,7 @@ struct currLesson : View{
                             }
                         }
                         
-                    self.progress = (Double(secondsLeft) / 60)
+                        self.progress = (Double(secondsLeft) / 60)
                 }
                 else{
                     self.progress = 0
@@ -179,7 +185,8 @@ struct currLesson : View{
             return Lesson(name: "Error", classroom: "Error", classIcon: "error", start: "0:00", end: "0:00")
         }
         
-        // Átloopol az órákon, ha talál egy current órát akkor returnöli
+        // Átloopol az órákon, ha talál egy current órát akkor returnöli, ez a 
+        // legegyszerűbb fajta, de sajnos nem az egyetlen fajta qwq
         for lesson in lessons {
             if isBetween(dis: lesson.startDate(), und: convertedDate, dat: lesson.endDate()) {
                     return lesson
@@ -189,15 +196,20 @@ struct currLesson : View{
         // Az ezelőtti loop failelt, szóval ezzel lecsekkolom hogy két óra
         // közt vagyunk e szendvicselve (metafórikusan)
         for (_, lesson) in lessons.enumerated() {
-            if convertedDate < lesson.startDate() ?? Date() {
-                let classIndex = lessons.firstIndex(where: {$0.end == lesson.end} ) ?? 0
+            
+            // Ide raktam volna egy checket hogy van e egyáltalán elementje a lessons-nek de rájöttem hogy akkor
+            // el se kezdi a loopot ha nincs tagja, mivel tagonként futtatjaű
+            if (isBetween(dis: lesson.startDate(), und:convertedDate, dat:lessons[0].startDate())) {
+                let classIndex = lessons.firstIndex(where: {$0.start == lesson.start} ) ?? 0
                 
-                return Lesson(name: "Szünet", classroom: lesson.classroom, classIcon: lesson.classIcon, start: lessons[classIndex-1].end, end: lesson.start)
+                if(classIndex > 0){
+                    return Lesson(name: "Szünet", classroom: lesson.classroom, classIcon: lesson.classIcon, start: lessons[classIndex-1].end, end: lesson.start)
+                }
             }
         }
         
         // Vagy valami nagyon rosszul sikerült vagy ez ténylegesen az utolsó óra
-        return Lesson(name: "Szünet", classroom: "Haza", classIcon: "house", start: lessons.last?.end ?? "0:00", end: "0:00")
+        return Lesson(name: "Haza", classroom: "Otthon Utca", classIcon: "house", start: "0:00", end: "0:01")
         
     }
     
@@ -241,9 +253,10 @@ struct currLesson : View{
     }
     
     // Frissíti az infót a jelenlegi óráról mert makacs a swift
-    // A funkció kicsit nehezen olvasható és undorítóan néz ki ngl, ezt egyszer újra kell írni
+    // A funkció kicsit nehezen olvasható, előre is elnézést kérek
     private func updateClassInfo() {
         let supposedLesson = getlesson()
+        
         // Megkeres egy olyan órát aminek a unique IDje stimmel a mienkkel
         let index = lessons.firstIndex(where: { $0.id == supposedLesson.id })
         let foundIndex = (index != nil)
@@ -263,7 +276,7 @@ struct currLesson : View{
             }
         }
         else{
-            // Ennek csak akkor kéne előfordulnia ha nincsenek órák aznap vagy haza lehet menni
+            // Se nem szünet, se nem óra van, csak csend és nyugalom
             noClassesLeft = true
             classIndex = -69
         }
@@ -280,11 +293,11 @@ func isBetween(dis: Date?, und: Date, dat: Date?) -> Bool {
 
 struct ContentView: View {
     
-    // TODO: rendes adat reading API callal ki kell cserélni rendes adatra, API Insert itt
+    // TODO: rendes adat reading API callal ki kell cserélni rendes adatra, API Insert itt (vagy valahol, no clue tbh)
     
     let classesForToday : [Lesson] = [
         Lesson(name:"Tesi", classroom : "Udvar", classIcon: "figure.badminton", start: "8:00", end: "8:45"),
-        Lesson(name:"Irodalom", classroom : "B006", classIcon: "pencil", start: "9:10", end: "9:40"),
+        Lesson(name:"Irodalom", classroom : "B006", classIcon: "pencil", start: "9:10", end: "9:55"),
         Lesson(name:"Töri", classroom : "D114", classIcon: "book.fill", start: "9:55", end: "10:40"),
         Lesson(name:"Matek", classroom : "A200", classIcon: "plus.forwardslash.minus", start: "10:50", end: "11:35"),
         Lesson(name:"Angol", classroom : "B104", classIcon: "flag.fill", start: "11:45", end: "12:30"),
